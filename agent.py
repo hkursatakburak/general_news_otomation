@@ -390,16 +390,11 @@ def build_message(articles: list[dict], slot: str) -> str:
 
     if not articles:
         return header + "✅ Yeni ve farkli haber bulunamadi."
-
-    emoji_map = {"YUKSEK": "🔴", "ORTA": "🟡", "DUSUK": "🟢"}
     blocks    = []
 
     for a in articles:
-        priority = str(a.get("priority", "DUSUK")).upper()
-        emoji    = emoji_map.get(priority, "⚪")
         block    = (
-            f"{emoji} <b>{a.get('title', 'Basliksiz')}</b>\n"
-            f"📝 {a.get('summary', 'Ozet yok.')}\n"
+            f"• <b>{a.get('title', 'Basliksiz')}</b>\n"
             f"🔗 <a href='{a.get('url', '#')}'>Habere git</a>"
         )
         blocks.append(block)
@@ -431,10 +426,6 @@ def run_agent(slot: str = "Manuel") -> None:
         articles[:MAX_ARTICLES_PER_RUN], memory
     )
 
-    # Embedding bitti — Gemini dakika kotasinin yenilenmesi icin bekle
-    print("[Kota] Embedding tamamlandi, 90s bekleniyor...")
-    time.sleep(90)
-
     if not unique_articles:
         send_telegram(
             f"🛡️ <b>SAVUNMA HABERLERİ</b>\n"
@@ -444,30 +435,21 @@ def run_agent(slot: str = "Manuel") -> None:
         save_memory(updated_memory)
         return
 
-    # 4. Gemini ile Turkce ozet uret
-    summaries = summarize_articles(unique_articles[:30])
+    # 4. Ozetleme olmadan dogrudan baslik + link gonder
+    news_to_send = unique_articles[:30]
 
-    if not summaries:
-        print("[Ajan] Ozetlenecek haber kalmadi.")
-        save_memory(updated_memory)
-        return
-
-    # 5. Oncelik sirasi: YUKSEK → ORTA → DUSUK
-    order = {"YUKSEK": 0, "ORTA": 1, "DUSUK": 2}
-    summaries.sort(key=lambda x: order.get(str(x.get("priority", "DUSUK")).upper(), 2))
-
-    # 6. 5'er 5'er Telegram'a gonder
-    for i in range(0, len(summaries), 5):
-        chunk = summaries[i : i + 5]
+    # 5. 5'er 5'er Telegram'a gonder
+    for i in range(0, len(news_to_send), 5):
+        chunk = news_to_send[i : i + 5]
         msg   = build_message(chunk, slot)
         send_telegram(msg)
-        if i + 5 < len(summaries):
+        if i + 5 < len(news_to_send):
             time.sleep(2)
 
-    # 7. Hafizayi kaydet
+    # 6. Hafizayi kaydet
     save_memory(updated_memory)
 
-    print(f"\n[Ajan] Tamamlandi. {len(summaries)} haber iletildi.")
+    print(f"\n[Ajan] Tamamlandi. {len(news_to_send)} haber baslik+link olarak iletildi.")
     print(f"{'='*55}\n")
 
 
