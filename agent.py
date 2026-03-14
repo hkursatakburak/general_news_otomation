@@ -3,7 +3,7 @@ Savunma Sanayii Haber Ajani — v2.0 (Semantik Filtre)
 =====================================================
 Calisma mantigi:
   1. 15 elite savunma sitesini Google News RSS ile tara (son 48 saat)
-  2. Her haber icin Gemini text-embedding-004 ile anlam vektoru uret
+    2. Her haber icin Gemini embedding modeli ile anlam vektoru uret
   3. Daha once gonderilenlerle cosine similarity karsilastir
   4. Esik altindaysa (gercekten yeni ve farkli) → Gemini ile Turkce ozet
   5. Telegram'a gonder, embedding'i kaydet
@@ -40,6 +40,10 @@ MAX_MEMORY_SIZE      = 300    # dosyada tutulacak maksimum kayit sayisi
 MAX_ARTICLES_PER_RUN = 40     # tek turda islenecek maksimum haber sayisi
 EMBEDDING_SLEEP      = 4      # embedding istekleri arasi bekleme (saniye)
 SUMMARY_SLEEP        = 20     # ozetleme istekleri arasi bekleme (saniye)
+EMBEDDING_MODELS     = [
+    "models/gemini-embedding-001",
+    "models/gemini-embedding-2-preview",
+]  # Kullanilabilirlik durumuna gore fallback sirasi
 
 # Takip edilen 15 elite savunma sitesi
 DEFENSE_SITES = [
@@ -145,18 +149,27 @@ def is_duplicate(embedding: list[float], memory: list[dict]) -> tuple[bool, floa
 
 def get_embedding(text: str, retries: int = 2) -> list[float] | None:
     """
-    Gemini text-embedding-004 ile semantik vektor uretir.
+    Gemini embedding modeli ile semantik vektor uretir.
     Kota asiminda EMBEDDING_SLEEP * 8 saniye bekleyip yeniden dener.
     """
     for attempt in range(retries + 1):
         try:
             client = genai.Client(api_key=GEMINI_API_KEY)
-            result = client.models.embed_content(
-                model="models/text-embedding-004",
-                contents=text,
-                config=types.EmbedContentConfig(task_type="SEMANTIC_SIMILARITY"),
-            )
-            return result.embeddings[0].values
+            for model_name in EMBEDDING_MODELS:
+                try:
+                    result = client.models.embed_content(
+                        model=model_name,
+                        contents=text,
+                        config=types.EmbedContentConfig(task_type="SEMANTIC_SIMILARITY"),
+                    )
+                    return result.embeddings[0].values
+                except Exception as inner_e:
+                    msg = str(inner_e)
+                    # Model not found durumunda sonraki embedding modelini dene.
+                    if "NOT_FOUND" in msg or "not found" in msg.lower():
+                        print(f"[Embedding] Model desteklenmiyor: {model_name}, fallback deneniyor...")
+                        continue
+                    raise
         except ResourceExhausted:
             wait = EMBEDDING_SLEEP * 8
             print(f"[Embedding] 429 Kota asimi, {wait}s bekleniyor... (deneme {attempt+1})")
