@@ -17,7 +17,8 @@ import math
 import time
 import requests
 import xml.etree.ElementTree as ET
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from google.api_core.exceptions import ResourceExhausted
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -149,12 +150,13 @@ def get_embedding(text: str, retries: int = 2) -> list[float] | None:
     """
     for attempt in range(retries + 1):
         try:
-            result = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=text,
-                task_type="SEMANTIC_SIMILARITY",
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            result = client.models.embed_content(
+                model="models/text-embedding-004",
+                contents=text,
+                config=types.EmbedContentConfig(task_type="SEMANTIC_SIMILARITY"),
             )
-            return result["embedding"]
+            return result.embeddings[0].values
         except ResourceExhausted:
             wait = EMBEDDING_SLEEP * 8
             print(f"[Embedding] 429 Kota asimi, {wait}s bekleniyor... (deneme {attempt+1})")
@@ -275,7 +277,7 @@ def summarize_articles(articles: list[dict]) -> list[dict]:
     Her makaleyi Gemini'ye gondererek Turkce 2-3 cumlelik ozet uretir.
     Anahtar kelime filtresi yoktur; kabul edilen tum haberler ozetlenir.
     """
-    model     = genai.GenerativeModel("gemini-2.0-flash")
+    client = genai.Client(api_key=GEMINI_API_KEY)
     summaries = []
 
     for i, article in enumerate(articles):
@@ -303,7 +305,7 @@ Icerik : {snippet}
         for attempt in range(retries + 1):
             try:
                 print(f"[Ozet] ({i+1}/{len(articles)}) '{title[:50]}'")
-                resp = model.generate_content(prompt)
+                resp = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
                 raw  = resp.text.strip()
 
                 # Kod blogu temizligi
@@ -325,7 +327,7 @@ Icerik : {snippet}
                     break
 
             except ResourceExhausted:
-                wait = SUMMARY_SLEEP * 2
+                wait = 120
                 if attempt < retries:
                     print(f"  → 429 Kota asimi, {wait}s bekleniyor... (deneme {attempt+1})")
                     time.sleep(wait)
@@ -401,7 +403,6 @@ def run_agent(slot: str = "Manuel") -> None:
     print(f"[{datetime.now().strftime('%d.%m.%Y %H:%M:%S')}] Ajan basladi — {slot}")
     print(f"{'='*55}")
 
-    genai.configure(api_key=GEMINI_API_KEY)
 
     # 1. Semantik hafizayi yukle
     memory = load_memory()
@@ -416,6 +417,10 @@ def run_agent(slot: str = "Manuel") -> None:
     unique_articles, updated_memory = filter_unique(
         articles[:MAX_ARTICLES_PER_RUN], memory
     )
+
+    # Embedding bitti — Gemini dakika kotasinin yenilenmesi icin bekle
+    print("[Kota] Embedding tamamlandi, 90s bekleniyor...")
+    time.sleep(90)
 
     if not unique_articles:
         send_telegram(
