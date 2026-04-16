@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Hafiza Cache Restore
+      - name: Hafiza Cache (Restore/Save)
         id: sent-memory-cache
         uses: actions/cache@v4
         with:
