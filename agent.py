@@ -475,6 +475,8 @@ def run_agent(slot: str = "Manuel") -> None:
         return
 
     if USE_SEMANTIC_FILTER:
+        # Not: filter_unique() tarafindaki memory guncellemesini bilincli olarak kullanmiyoruz.
+        # Hafizaya yalnizca Telegram'a basariyla gonderilen URL'ler yaziliyor.
         unique_articles, _ = filter_unique(candidate_articles, memory)
     else:
         unique_articles = candidate_articles
