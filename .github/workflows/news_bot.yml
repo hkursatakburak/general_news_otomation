@@ -24,9 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Botu Çalıştır 🚀
+      - name: Botu Çalıştır 
         env:
-          # Buradaki gizli anahtarları GitHub Ayarlarından ekleyeceğiz
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }} 
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }} # <-- İŞTE BUNU EKLEDİK DOSTUM
         run: python agent.py
