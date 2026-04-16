@@ -34,6 +34,7 @@ TELEGRAM_CHAT_ID     = os.environ["TELEGRAM_CHAT_ID"]
 GEMINI_API_KEY       = os.environ["GEMINI_API_KEY"]
 
 MEMORY_FILE          = Path("sent_embeddings.json")  # semantik hafiza dosyasi
+USE_SEMANTIC_FILTER  = False  # v2.1: URL bazli kesin deduplikasyon aktif
 SIMILARITY_THRESHOLD = 0.85   # 0.0-1.0; dusurursen daha az haber, yukseltirsen daha fazla
 MEMORY_TTL_HOURS     = 48     # bu sureden eski kayitlar silinir
 MAX_MEMORY_SIZE      = 300    # dosyada tutulacak maksimum kayit sayisi
@@ -113,6 +114,31 @@ def save_memory(records: list[dict]) -> None:
         encoding="utf-8",
     )
     print(f"[Hafiza] {len(trimmed)} kayit kaydedildi.")
+
+
+def build_sent_urls(records: list[dict]) -> set[str]:
+    return {r.get("url", "") for r in records if r.get("url")}
+
+
+def append_sent_articles_to_memory(memory: list[dict], sent_articles: list[dict]) -> list[dict]:
+    updated      = list(memory)
+    existing_urls = build_sent_urls(updated)
+
+    for article in sent_articles:
+        url = article.get("url", "")
+        if not url or url in existing_urls:
+            continue
+
+        updated.append(
+            {
+                "url":       url,
+                "embedding": article.get("_embedding", []),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        existing_urls.add(url)
+
+    return updated
 
 
 # ---------------------------------------------------------------------------
@@ -363,10 +389,10 @@ Icerik : {snippet}
 # Telegram
 # ---------------------------------------------------------------------------
 
-def send_telegram(text: str) -> None:
+def send_telegram(text: str) -> bool:
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     try:
-        requests.post(
+        resp = requests.post(
             url,
             json={
                 "chat_id":                  TELEGRAM_CHAT_ID,
@@ -376,8 +402,13 @@ def send_telegram(text: str) -> None:
             },
             timeout=15,
         )
+        if resp.status_code != 200:
+            print(f"[Telegram] Uyari: HTTP {resp.status_code} - {resp.text}")
+            return False
+        return True
     except Exception as e:
         print(f"[Telegram] Gonderim hatasi: {e}")
+        return False
 
 
 def build_message(articles: list[dict], slot: str) -> str:
@@ -414,6 +445,8 @@ def run_agent(slot: str = "Manuel") -> None:
 
     # 1. Semantik hafizayi yukle
     memory = load_memory()
+    sent_urls = build_sent_urls(memory)
+    print(f"[Hafiza] URL hafizasi: {len(sent_urls)} kayit.")
 
     # 2. Haberleri topla
     articles = collect_articles()
@@ -421,32 +454,47 @@ def run_agent(slot: str = "Manuel") -> None:
         print("[Ajan] Hic haber bulunamadi, cikiliyor.")
         return
 
-    # 3. Semantik benzerlik filtresi
-    unique_articles, updated_memory = filter_unique(
-        articles[:MAX_ARTICLES_PER_RUN], memory
-    )
+    # 3. URL bazli kesin deduplikasyon (embedding'den once)
+    candidate_articles = []
+    for article in articles[:MAX_ARTICLES_PER_RUN]:
+        url = article.get("url", "")
+        if not url:
+            continue
+        if url in sent_urls:
+            print(f"[Filtre][URL] Daha once gonderildi, atlaniyor: {url}")
+            continue
+        candidate_articles.append(article)
 
-    if not unique_articles:
+    if not candidate_articles:
         send_telegram(
             f"🛡️ <b>SAVUNMA HABERLERİ</b>\n"
             f"📅 {datetime.now().strftime('%d.%m.%Y %H:%M')} · {slot}\n\n"
             f"✅ Yeni ve farkli haber bulunamadi, tum icerikler daha once iletildi."
         )
-        save_memory(updated_memory)
+        save_memory(memory)
         return
+
+    if USE_SEMANTIC_FILTER:
+        unique_articles, _ = filter_unique(candidate_articles, memory)
+    else:
+        unique_articles = candidate_articles
 
     # 4. Ozetleme olmadan dogrudan baslik + link gonder
     news_to_send = unique_articles[:30]
+    sent_articles = []
 
     # 5. 5'er 5'er Telegram'a gonder
     for i in range(0, len(news_to_send), 5):
         chunk = news_to_send[i : i + 5]
         msg   = build_message(chunk, slot)
-        send_telegram(msg)
+        sent_ok = send_telegram(msg)
+        if sent_ok:
+            sent_articles.extend(chunk)
         if i + 5 < len(news_to_send):
             time.sleep(2)
 
     # 6. Hafizayi kaydet
+    updated_memory = append_sent_articles_to_memory(memory, sent_articles)
     save_memory(updated_memory)
 
     print(f"\n[Ajan] Tamamlandi. {len(news_to_send)} haber baslik+link olarak iletildi.")
