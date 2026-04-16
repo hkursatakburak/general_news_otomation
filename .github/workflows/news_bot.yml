@@ -19,6 +19,15 @@ jobs:
         with:
           python-version: '3.13'
 
+      - name: Hafiza Cache Restore
+        id: sent-memory-cache
+        uses: actions/cache@v4
+        with:
+          path: sent_embeddings.json
+          key: sent-embeddings-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            sent-embeddings-${{ runner.os }}-
+
       - name: Kütüphaneleri Yükle
         run: |
           python -m pip install --upgrade pip
