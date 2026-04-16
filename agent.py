@@ -117,7 +117,7 @@ def save_memory(records: list[dict]) -> None:
 
 
 def build_sent_urls(records: list[dict]) -> set[str]:
-    return {r.get("url", "") for r in records if r.get("url")}
+    return {r["url"] for r in records if r.get("url")}
 
 
 def append_sent_articles_to_memory(memory: list[dict], sent_articles: list[dict]) -> list[dict]:
