@@ -1,0 +1,32 @@
+name: Haber Botu Otomasyonu
+
+on:
+  schedule:
+    # Günde 3 kere çalışır
+    # Türkiye saati ile (UTC+3) 09:00, 15:00 ve 21:00'a denk gelir.
+    - cron: '0 6,12,18 * * *'
+  workflow_dispatch: # İstediğin zaman manuel çalıştırmak için buton ekler 🔘
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodları Çek
+        uses: actions/checkout@v3
+
+      - name: Python Kurulumu
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.13'
+
+      - name: Kütüphaneleri Yükle
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Botu Çalıştır 🚀
+        env:
+          # Buradaki gizli anahtarları GitHub Ayarlarından ekleyeceğiz
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }} 
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} 
+        run: python agent.py
